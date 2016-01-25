@@ -97,6 +97,60 @@ module Spree
       refund_transaction_response
     end
   end
+
+  def empty_success
+    Class.new do
+      def success?; true; end
+      def authorization; nil; end
+    end.new
+  end
+
+  def void(response_code, gateway_options={})
+    payment = Spree::Payment.find_by_response_code(response_code)
+    amount = payment.credit_allowed
+
+    #in case a partially refunded payment gets cancelled/voided, we don't want to act on the refunded payments
+    if amount.to_f > 0
+
+      # Process the refund
+      refund_type = payment.amount == amount.to_f ? "Full" : "Partial"
+
+      refund_transaction = provider.build_refund_transaction({
+        :TransactionID => payment.source.transaction_id,
+        :RefundType => refund_type,
+        :Amount => {
+          :currencyID => payment.currency,
+          :value => amount },
+        :RefundSource => "any" })
+
+      refund_transaction_response = provider.refund_transaction(refund_transaction)
+
+      if refund_transaction_response.success?
+        payment.source.update_attributes({
+          :refunded_at => Time.now,
+          :refund_transaction_id => refund_transaction_response.RefundTransactionID,
+          :state => "refunded",
+          :refund_type => refund_type
+        })
+        empty_success
+      else
+        class << refund_transaction_response
+          def to_s
+            errors.map(&:long_message).join(" ")
+          end
+        end
+        refund_transaction_response
+      end
+    end
+
+    empty_success
+  end
+
+  #cancellations also work for a partially refunded payment
+  def cancel(response_code)
+    void(response_code, {})
+  end
+
 end
 
 #   payment.state = 'completed'
