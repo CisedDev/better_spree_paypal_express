@@ -131,15 +131,6 @@ module Spree
             :state => "refunded",
             :refund_type => refund_type
           })
-
-          payment.class.create!(
-            :order => payment.order,
-            :source => payment,
-            :payment_method => payment.payment_method,
-            :amount => amount.to_f.abs * -1,
-            :response_code => refund_transaction_response.RefundTransactionID,
-            :state => 'completed'
-          )
           empty_success
         else
           class << refund_transaction_response
